@@ -265,6 +265,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if u.User == nil {
+		log.Fatal("Missing username and/or password")
+	}
 	user := u.User.Username()
 	pass, _ := u.User.Password()
 	if user == "" || pass == "" {
