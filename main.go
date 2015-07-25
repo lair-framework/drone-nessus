@@ -23,12 +23,12 @@ const (
 )
 
 const usage = `
-	Usage: nessus.go <project_id> <file>
+	Usage: main.go <project_id> <file>
 `
 
 type hostMap struct {
 	Hosts         map[string]bool
-	Vulnerability *lair.Vulnerability
+	Vulnerability *lair.Issue
 }
 
 func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, error) {
@@ -38,7 +38,7 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 
 	project := &lair.Project{}
 	project.Tool = TOOL
-	project.Id = projectId
+	project.ID = projectId
 
 	vulnHostMap := make(map[string]hostMap)
 	for _, reportHost := range nessus.Report.ReportHosts {
@@ -52,11 +52,11 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 					Weight:      OSWEIGHT,
 					Fingerprint: tag.Data,
 				}
-				host.OS = append(host.OS, *os)
+				host.OS = *os
 			case tag.Name == "host-ip":
-				host.StringAddr = tag.Data
+				host.IPv4 = tag.Data
 			case tag.Name == "mac-address":
-				host.MacAddr = tag.Data
+				host.MAC = tag.Data
 			case tag.Name == "host-fqdn":
 				host.Hostnames = append(host.Hostnames, tag.Data)
 			case tag.Name == "netbios-name":
@@ -64,7 +64,7 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 			}
 		}
 
-		portsProcessed := make(map[string]lair.Port)
+		portsProcessed := make(map[string]lair.Service)
 		for _, item := range reportHost.ReportItems {
 			pluginId := item.PluginID
 			pluginFamily := item.PluginFamily
@@ -83,7 +83,7 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 			portKey := fmt.Sprintf("%d:%s", port, protocol)
 			if _, ok := portsProcessed[portKey]; !ok {
 				// Haven't seen this port. Create it.
-				p := &lair.Port{
+				p := &lair.Service{
 					Port:     port,
 					Protocol: protocol,
 					Service:  service,
@@ -124,13 +124,13 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 
 			if _, ok := vulnHostMap[pluginId]; !ok {
 				// Vulnerability has not yet been seen for this host. Add it.
-				v := &lair.Vulnerability{}
+				v := &lair.Issue{}
 
 				v.Title = title
 				v.Description = item.Description
 				v.Solution = item.Solution
 				v.Evidence = evidence
-				v.Flag = item.ExploitAvailable
+				v.IsFlagged = item.ExploitAvailable
 				if item.ExploitAvailable {
 					exploitDetail := item.ExploitFrameworkMetasploit
 					if exploitDetail {
@@ -172,19 +172,19 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 					}
 				}
 
-				v.Cvss = item.CVSSBaseScore
-				if v.Cvss == 0 && item.RiskFactor != "" && item.RiskFactor != "Low" {
+				v.CVSS = item.CVSSBaseScore
+				if v.CVSS == 0 && item.RiskFactor != "" && item.RiskFactor != "Low" {
 					switch {
 					case item.RiskFactor == "Medium":
-						v.Cvss = 5.0
+						v.CVSS = 5.0
 					case item.RiskFactor == "High":
-						v.Cvss = 7.5
+						v.CVSS = 7.5
 					case item.RiskFactor == "Critical":
-						v.Cvss = 10
+						v.CVSS = 10
 					}
 				}
 
-				if v.Cvss == 0 {
+				if v.CVSS == 0 {
 					// Ignore informational findings
 					continue
 				}
@@ -192,12 +192,12 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 				// Set the CVEs
 				for _, cve := range item.CVE {
 					c := cvePattern.ReplaceAllString(cve, "")
-					v.Cves = append(v.Cves, c)
+					v.CVEs = append(v.CVEs, c)
 				}
 
 				// Set the plugin and identified by information
-				plugin := &lair.PluginId{Tool: TOOL, Id: pluginId}
-				v.PluginIds = append(v.PluginIds, *plugin)
+				plugin := &lair.PluginID{Tool: TOOL, ID: pluginId}
+				v.PluginIDs = append(v.PluginIDs, *plugin)
 				v.IdentifiedBy = append(v.IdentifiedBy, TOOL)
 
 				vulnHostMap[pluginId] = hostMap{Hosts: make(map[string]bool), Vulnerability: v}
@@ -205,18 +205,18 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 			}
 
 			if hm, ok := vulnHostMap[pluginId]; ok {
-				hostStr := fmt.Sprintf("%s:%d:%s", host.StringAddr, port, protocol)
+				hostStr := fmt.Sprintf("%s:%d:%s", host.IPv4, port, protocol)
 				hm.Hosts[hostStr] = true
 			}
 		}
 
-		if host.StringAddr == "" {
-			host.StringAddr = tempIp
+		if host.IPv4 == "" {
+			host.IPv4 = tempIp
 		}
 
 		// Add ports to host and host to project
 		for _, p := range portsProcessed {
-			host.Ports = append(host.Ports, p)
+			host.Services = append(host.Services, p)
 		}
 		project.Hosts = append(project.Hosts, *host)
 	}
@@ -228,14 +228,14 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 			if err != nil {
 				return nil, err
 			}
-			hostKey := &lair.VulnerabilityHost{
-				StringAddr: tokens[0],
-				Port:       portNum,
-				Protocol:   tokens[2],
+			hostKey := &lair.IssueHost{
+				IPv4:     tokens[0],
+				Port:     portNum,
+				Protocol: tokens[2],
 			}
 			hm.Vulnerability.Hosts = append(hm.Vulnerability.Hosts, *hostKey)
 		}
-		project.Vulnerabilities = append(project.Vulnerabilities, *hm.Vulnerability)
+		project.Issues = append(project.Issues, *hm.Vulnerability)
 	}
 
 	if len(project.Commands) == 0 {
