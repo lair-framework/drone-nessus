@@ -18,38 +18,48 @@ import (
 )
 
 const (
-	TOOL     = "Nessus"
-	OSWEIGHT = 75
-)
-
-const usage = `
-	Usage: main.go <project_id> <file>
+	version  = "2.0.0"
+	tool     = "nessus"
+	osWeight = 75
+	usage    = `
+Usage:
+  drone-nessus <id> <filename>
+  export LAIR_ID=<id>; drone-nessus <filename>
+Options:
+  -v              show version and exit
+  -h              show usage and exit
+  -k              allow insecure SSL connections
+  -force-ports    disable data protection in the API server for excessive ports
+  -tags           a comma separated list of tags to add to every host that is imported
 `
+)
 
 type hostMap struct {
 	Hosts         map[string]bool
 	Vulnerability *lair.Issue
 }
 
-func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, error) {
+func buildProject(nessus *nessus.NessusData, projectID string, tags []string) (*lair.Project, error) {
 	cvePattern := regexp.MustCompile(`(CVE-|CAN-)`)
-	falseUdpPattern := regexp.MustCompile(`.*\?$`)
-	noteId := 1
+	falseUDPPattern := regexp.MustCompile(`.*\?$`)
+	noteID := 1
 
 	project := &lair.Project{}
-	project.Tool = TOOL
-	project.ID = projectId
+	project.Tool = tool
+	project.ID = projectID
 
 	vulnHostMap := make(map[string]hostMap)
 	for _, reportHost := range nessus.Report.ReportHosts {
-		tempIp := reportHost.Name
-		host := &lair.Host{}
+		tempIP := reportHost.Name
+		host := &lair.Host{
+			Tags: tags,
+		}
 		for _, tag := range reportHost.HostProperties.Tags {
 			switch {
 			case tag.Name == "operating-system":
 				os := &lair.OS{
-					Tool:        TOOL,
-					Weight:      OSWEIGHT,
+					Tool:        tool,
+					Weight:      osWeight,
 					Fingerprint: tag.Data,
 				}
 				host.OS = *os
@@ -66,7 +76,7 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 
 		portsProcessed := make(map[string]lair.Service)
 		for _, item := range reportHost.ReportItems {
-			pluginId := item.PluginID
+			pluginID := item.PluginID
 			pluginFamily := item.PluginFamily
 			severity := item.Severity
 			title := item.PluginName
@@ -76,7 +86,7 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 			evidence := item.PluginOutput
 
 			// Check for false positive UDP...ignore it if found.
-			if protocol == "udp" && falseUdpPattern.MatchString(service) {
+			if protocol == "udp" && falseUDPPattern.MatchString(service) {
 				continue
 			}
 
@@ -94,9 +104,9 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 			if evidence != "" && severity >= 1 && pluginFamily != "Port scanners" && pluginFamily != "Service detection" {
 				// Format and add evidence
 				note := &lair.Note{
-					Title:          fmt.Sprintf("%s (ID%d)", title, noteId),
+					Title:          fmt.Sprintf("%s (ID%d)", title, noteID),
 					Content:        "",
-					LastModifiedBy: TOOL,
+					LastModifiedBy: tool,
 				}
 				e := strings.Trim(evidence, " \t")
 				for _, line := range strings.Split(e, "\n") {
@@ -108,12 +118,12 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 				p := portsProcessed[portKey]
 				p.Notes = append(p.Notes, *note)
 				portsProcessed[portKey] = p
-				noteId += 1
+				noteID++
 			}
 
-			if pluginId == "19506" {
+			if pluginID == "19506" {
 				command := &lair.Command{
-					Tool:    TOOL,
+					Tool:    tool,
 					Command: item.PluginOutput,
 				}
 				if project.Commands == nil || len(project.Commands) == 0 {
@@ -122,7 +132,7 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 				continue
 			}
 
-			if _, ok := vulnHostMap[pluginId]; !ok {
+			if _, ok := vulnHostMap[pluginID]; !ok {
 				// Vulnerability has not yet been seen for this host. Add it.
 				v := &lair.Issue{}
 
@@ -137,7 +147,7 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 						note := &lair.Note{
 							Title:          "Metasploit Exploit",
 							Content:        "Exploit exists. Details unknown.",
-							LastModifiedBy: TOOL,
+							LastModifiedBy: tool,
 						}
 						if item.MetasploitName != "" {
 							note.Content = item.MetasploitName
@@ -150,7 +160,7 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 						note := &lair.Note{
 							Title:          "Canvas Exploit",
 							Content:        "Exploit exists. Details unknown.",
-							LastModifiedBy: TOOL,
+							LastModifiedBy: tool,
 						}
 						if item.CanvasPackage != "" {
 							note.Content = item.CanvasPackage
@@ -163,7 +173,7 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 						note := &lair.Note{
 							Title:          "Core Impact Exploit",
 							Content:        "Exploit exists. Details unknown.",
-							LastModifiedBy: TOOL,
+							LastModifiedBy: tool,
 						}
 						if item.CoreName != "" {
 							note.Content = item.CoreName
@@ -196,22 +206,22 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 				}
 
 				// Set the plugin and identified by information
-				plugin := &lair.PluginID{Tool: TOOL, ID: pluginId}
+				plugin := &lair.PluginID{Tool: tool, ID: pluginID}
 				v.PluginIDs = append(v.PluginIDs, *plugin)
-				v.IdentifiedBy = append(v.IdentifiedBy, TOOL)
+				v.IdentifiedBy = append(v.IdentifiedBy, tool)
 
-				vulnHostMap[pluginId] = hostMap{Hosts: make(map[string]bool), Vulnerability: v}
+				vulnHostMap[pluginID] = hostMap{Hosts: make(map[string]bool), Vulnerability: v}
 
 			}
 
-			if hm, ok := vulnHostMap[pluginId]; ok {
+			if hm, ok := vulnHostMap[pluginID]; ok {
 				hostStr := fmt.Sprintf("%s:%d:%s", host.IPv4, port, protocol)
 				hm.Hosts[hostStr] = true
 			}
 		}
 
 		if host.IPv4 == "" {
-			host.IPv4 = tempIp
+			host.IPv4 = tempIP
 		}
 
 		// Add ports to host and host to project
@@ -222,7 +232,7 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 	}
 
 	for _, hm := range vulnHostMap {
-		for key, _ := range hm.Hosts {
+		for key := range hm.Hosts {
 			tokens := strings.Split(key, ":")
 			portNum, err := strconv.Atoi(tokens[1])
 			if err != nil {
@@ -239,7 +249,7 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 	}
 
 	if len(project.Commands) == 0 {
-		c := &lair.Command{Tool: TOOL, Command: "Nessus scan - command unknown"}
+		c := &lair.Command{Tool: tool, Command: "Nessus scan - command unknown"}
 		project.Commands = append(project.Commands, *c)
 	}
 
@@ -247,24 +257,37 @@ func buildProject(nessus *nessus.NessusData, projectId string) (*lair.Project, e
 }
 
 func main() {
-
-	// Parse command line args
-	flag.Usage = func() { fmt.Print(usage) }
+	showVersion := flag.Bool("v", false, "")
+	insecureSSL := flag.Bool("k", false, "")
+	forcePorts := flag.Bool("force-ports", false, "")
+	tags := flag.String("tags", "", "")
+	flag.Usage = func() {
+		fmt.Println(usage)
+	}
 	flag.Parse()
-	if len(flag.Args()) != 2 {
-		log.Fatal("You need to supply the Lair project ID and file you wish to import")
+	if *showVersion {
+		log.Println(version)
+		os.Exit(0)
 	}
-	pid := flag.Arg(0)
-	f := flag.Arg(1)
+	lairURL := os.Getenv("LAIR_API_SERVER")
+	if lairURL == "" {
+		log.Fatal("Fatal: Missing LAIR_API_SERVER environment variable")
+	}
+	lairPID := os.Getenv("LAIR_ID")
+	var filename string
+	switch len(flag.Args()) {
+	case 2:
+		lairPID = flag.Arg(0)
+		filename = flag.Arg(1)
+	case 1:
+		filename = flag.Arg(0)
+	default:
+		log.Fatal("Fatal: Missing required argument")
+	}
 
-	// Parse and setup to target drone server info
-	dest := os.Getenv("LAIR_API_SERVER")
-	if dest == "" {
-		log.Fatal("Missing LAIR_API_SERVER environment variable.")
-	}
-	u, err := url.Parse(dest)
+	u, err := url.Parse(lairURL)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Fatal: Error parsing LAIR_API_SERVER URL. Error %s", err.Error())
 	}
 	if u.User == nil {
 		log.Fatal("Missing username and/or password")
@@ -272,34 +295,39 @@ func main() {
 	user := u.User.Username()
 	pass, _ := u.User.Password()
 	if user == "" || pass == "" {
-		log.Fatal("Missing username and/or password")
+		log.Fatal("Fatal: Missing username and/or password")
 	}
-	target := &client.LairTarget{User: user, Password: pass, Host: u.Host}
+	c, err := client.New(&client.COptions{
+		User:               user,
+		Password:           pass,
+		Host:               u.Host,
+		Scheme:             u.Scheme,
+		InsecureSkipVerify: *insecureSSL,
+	})
 
-	// Read the raw data file and parse
-	buf, err := ioutil.ReadFile(f)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Fatal: Error setting up client: Error %s", err.Error())
+	}
+
+	buf, err := ioutil.ReadFile(filename)
+	if err != nil {
+		log.Fatalf("Fatal: Could not open file. Error %s", err.Error())
 	}
 	nessusData, err := nessus.Parse(buf)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Fatal: Error parsing nessus data. Error %s", err.Error())
+	}
+	hostTags := strings.Split(*tags, ",")
+	project, err := buildProject(nessusData, lairPID, hostTags)
+	if err != nil {
+		log.Fatalf("Fatal: Error building project. Error %s", err.Error())
 	}
 
-	// Convert the Nessus structs to a go-lair-drone project
-	project, err := buildProject(nessusData, pid)
+	res, err := c.ImportProject(&client.DOptions{ForcePorts: *forcePorts}, project)
 	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Import the project into Lair
-	res, err := client.ImportProject(target, project)
-	if err != nil {
-		log.Fatal("Unable to import project: ", err)
+		log.Fatalf("Fatal: Unable to import project. Error %s", err)
 	}
 	defer res.Body.Close()
-
-	// Inspect the reponse
 	droneRes := &client.Response{}
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
@@ -309,9 +337,7 @@ func main() {
 		log.Fatal(err)
 	}
 	if droneRes.Status == "Error" {
-		log.Fatal("Import failed : ", droneRes.Message)
-	} else {
-		log.Println("Import complete, status : ", droneRes.Status)
+		log.Fatalf("Fatal: Import failed. Error %s", droneRes.Message)
 	}
-
+	log.Println("Success: Operation completed successfully")
 }
