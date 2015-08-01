@@ -317,7 +317,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Fatal: Error parsing nessus data. Error %s", err.Error())
 	}
-	hostTags := strings.Split(*tags, ",")
+	hostTags := []string{}
+	if *tags != "" {
+		hostTags = strings.Split(*tags, ",")
+	}
 	project, err := buildProject(nessusData, lairPID, hostTags)
 	if err != nil {
 		log.Fatalf("Fatal: Error building project. Error %s", err.Error())
