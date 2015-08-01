@@ -208,7 +208,7 @@ func buildProject(nessus *nessus.NessusData, projectID string, tags []string) (*
 				// Set the plugin and identified by information
 				plugin := &lair.PluginID{Tool: tool, ID: pluginID}
 				v.PluginIDs = append(v.PluginIDs, *plugin)
-				v.IdentifiedBy = append(v.IdentifiedBy, tool)
+				v.IdentifiedBy = append(v.IdentifiedBy, lair.IdentifiedBy{Tool: tool})
 
 				vulnHostMap[pluginID] = hostMap{Hosts: make(map[string]bool), Vulnerability: v}
 
