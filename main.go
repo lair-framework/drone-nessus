@@ -22,6 +22,8 @@ const (
 	tool     = "nessus"
 	osWeight = 75
 	usage    = `
+Parses a nessus XML file into a lair project.
+
 Usage:
   drone-nessus <id> <filename>
   export LAIR_ID=<id>; drone-nessus <filename>
