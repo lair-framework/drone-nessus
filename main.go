@@ -290,7 +290,7 @@ func main() {
 		log.Fatalf("Fatal: Error parsing LAIR_API_SERVER URL. Error %s", err.Error())
 	}
 	if u.User == nil {
-		log.Fatal("Missing username and/or password")
+		log.Fatal("Fatal: Missing username and/or password")
 	}
 	user := u.User.Username()
 	pass, _ := u.User.Password()
