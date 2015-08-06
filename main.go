@@ -25,8 +25,8 @@ const (
 Parses a nessus XML file into a lair project.
 
 Usage:
-  drone-nessus <id> <filename>
-  export LAIR_ID=<id>; drone-nessus <filename>
+  drone-nessus [options] <id> <filename>
+  export LAIR_ID=<id>; drone-nessus [options] <filename>
 Options:
   -v              show version and exit
   -h              show usage and exit
