@@ -34,7 +34,7 @@ Options:
   -force-ports    disable data protection in the API server for excessive ports
   -limit-hosts    only import hosts that have listening ports
   -tags           a comma separated list of tags to add to every host that is imported
-	-info						import informational findings
+  -info		  import informational findings
 `
 )
 
