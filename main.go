@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	version  = "2.1.0"
+	version  = "2.2.0"
 	tool     = "nessus"
 	osWeight = 75
 	usage    = `
@@ -34,6 +34,7 @@ Options:
   -force-ports    disable data protection in the API server for excessive ports
   -limit-hosts    only import hosts that have listening ports
   -tags           a comma separated list of tags to add to every host that is imported
+  -info		  import informational findings
 `
 )
 
@@ -42,7 +43,7 @@ type hostMap struct {
 	Vulnerability *lair.Issue
 }
 
-func buildProject(nessus *nessus.NessusData, projectID string, tags []string) (*lair.Project, error) {
+func buildProject(nessus *nessus.NessusData, projectID string, tags []string, info bool) (*lair.Project, error) {
 	cvePattern := regexp.MustCompile(`(CVE-|CAN-)`)
 	falseUDPPattern := regexp.MustCompile(`.*\?$`)
 	noteID := 1
@@ -184,7 +185,6 @@ func buildProject(nessus *nessus.NessusData, projectID string, tags []string) (*
 						v.Notes = append(v.Notes, *note)
 					}
 				}
-
 				v.CVSS = item.CVSSBaseScore
 				if v.CVSS == 0 && item.RiskFactor != "" && item.RiskFactor != "Low" {
 					switch {
@@ -198,8 +198,10 @@ func buildProject(nessus *nessus.NessusData, projectID string, tags []string) (*
 				}
 
 				if v.CVSS == 0 {
-					// Ignore informational findings
-					continue
+					// Import informational findings if option selected
+					if !info {
+						continue
+					}
 				}
 
 				// Set the CVEs
@@ -265,6 +267,7 @@ func main() {
 	forcePorts := flag.Bool("force-ports", false, "")
 	limitHosts := flag.Bool("limit-hosts", false, "")
 	tags := flag.String("tags", "", "")
+	info := flag.Bool("info", false, "")
 	flag.Usage = func() {
 		fmt.Println(usage)
 	}
@@ -325,7 +328,7 @@ func main() {
 	if *tags != "" {
 		hostTags = strings.Split(*tags, ",")
 	}
-	project, err := buildProject(nessusData, lairPID, hostTags)
+	project, err := buildProject(nessusData, lairPID, hostTags, *info)
 	if err != nil {
 		log.Fatalf("Fatal: Error building project. Error %s", err.Error())
 	}
