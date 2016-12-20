@@ -43,6 +43,15 @@ type hostMap struct {
 	Vulnerability *lair.Issue
 }
 
+func isDuplicateTitle(m map[string]hostMap, title string) bool {
+	for _, v := range m {
+		if v.Vulnerability.Title == title {
+			return true
+		}
+	}
+	return false
+}
+
 func buildProject(nessus *nessus.NessusData, projectID string, tags []string, info bool) (*lair.Project, error) {
 	cvePattern := regexp.MustCompile(`(CVE-|CAN-)`)
 	falseUDPPattern := regexp.MustCompile(`.*\?$`)
@@ -79,6 +88,7 @@ func buildProject(nessus *nessus.NessusData, projectID string, tags []string, in
 		}
 
 		portsProcessed := make(map[string]lair.Service)
+
 		for _, item := range reportHost.ReportItems {
 			pluginID := item.PluginID
 			pluginFamily := item.PluginFamily
@@ -136,93 +146,94 @@ func buildProject(nessus *nessus.NessusData, projectID string, tags []string, in
 				continue
 			}
 
-			if _, ok := vulnHostMap[pluginID]; !ok {
-				// Vulnerability has not yet been seen for this host. Add it.
-				v := &lair.Issue{}
-
-				v.Title = title
-				v.Description = item.Description
-				v.Solution = item.Solution
-				v.Evidence = evidence
-				v.IsFlagged = item.ExploitAvailable
-				if item.ExploitAvailable {
-					exploitDetail := item.ExploitFrameworkMetasploit
-					if exploitDetail {
-						note := &lair.Note{
-							Title:          "Metasploit Exploit",
-							Content:        "Exploit exists. Details unknown.",
-							LastModifiedBy: tool,
-						}
-						if item.MetasploitName != "" {
-							note.Content = item.MetasploitName
-						}
-						v.Notes = append(v.Notes, *note)
-					}
-
-					exploitDetail = item.ExploitFrameworkCanvas
-					if exploitDetail {
-						note := &lair.Note{
-							Title:          "Canvas Exploit",
-							Content:        "Exploit exists. Details unknown.",
-							LastModifiedBy: tool,
-						}
-						if item.CanvasPackage != "" {
-							note.Content = item.CanvasPackage
-						}
-						v.Notes = append(v.Notes, *note)
-					}
-
-					exploitDetail = item.ExploitFrameworkCore
-					if exploitDetail {
-						note := &lair.Note{
-							Title:          "Core Impact Exploit",
-							Content:        "Exploit exists. Details unknown.",
-							LastModifiedBy: tool,
-						}
-						if item.CoreName != "" {
-							note.Content = item.CoreName
-						}
-						v.Notes = append(v.Notes, *note)
-					}
-				}
-				v.CVSS = item.CVSSBaseScore
-				if v.CVSS == 0 && item.RiskFactor != "" && item.RiskFactor != "Low" {
-					switch {
-					case item.RiskFactor == "Medium":
-						v.CVSS = 5.0
-					case item.RiskFactor == "High":
-						v.CVSS = 7.5
-					case item.RiskFactor == "Critical":
-						v.CVSS = 10
-					}
-				}
-
-				if v.CVSS == 0 {
-					// Import informational findings if option selected
-					if !info {
-						continue
-					}
-				}
-
-				// Set the CVEs
-				for _, cve := range item.CVE {
-					c := cvePattern.ReplaceAllString(cve, "")
-					v.CVEs = append(v.CVEs, c)
-				}
-
-				// Set the plugin and identified by information
-				plugin := &lair.PluginID{Tool: tool, ID: pluginID}
-				v.PluginIDs = append(v.PluginIDs, *plugin)
-				v.IdentifiedBy = append(v.IdentifiedBy, lair.IdentifiedBy{Tool: tool})
-
-				vulnHostMap[pluginID] = hostMap{Hosts: make(map[string]bool), Vulnerability: v}
-
-			}
-
 			if hm, ok := vulnHostMap[pluginID]; ok {
 				hostStr := fmt.Sprintf("%s:%d:%s", host.IPv4, port, protocol)
 				hm.Hosts[hostStr] = true
+				continue
 			}
+
+			// Vulnerability has not yet been seen for this host. Add it.
+			v := &lair.Issue{}
+			v.Title = title
+			if isDuplicateTitle(vulnHostMap, title) {
+				v.Title = fmt.Sprintf("%s - %s", title, pluginID)
+			}
+			v.Description = item.Description
+			v.Solution = item.Solution
+			v.Evidence = evidence
+			v.IsFlagged = item.ExploitAvailable
+			if item.ExploitAvailable {
+				exploitDetail := item.ExploitFrameworkMetasploit
+				if exploitDetail {
+					note := lair.Note{
+						Title:          "Metasploit Exploit",
+						Content:        "Exploit exists. Details unknown.",
+						LastModifiedBy: tool,
+					}
+					if item.MetasploitName != "" {
+						note.Content = item.MetasploitName
+					}
+					v.Notes = append(v.Notes, note)
+				}
+
+				exploitDetail = item.ExploitFrameworkCanvas
+				if exploitDetail {
+					note := lair.Note{
+						Title:          "Canvas Exploit",
+						Content:        "Exploit exists. Details unknown.",
+						LastModifiedBy: tool,
+					}
+					if item.CanvasPackage != "" {
+						note.Content = item.CanvasPackage
+					}
+					v.Notes = append(v.Notes, note)
+				}
+
+				exploitDetail = item.ExploitFrameworkCore
+				if exploitDetail {
+					note := lair.Note{
+						Title:          "Core Impact Exploit",
+						Content:        "Exploit exists. Details unknown.",
+						LastModifiedBy: tool,
+					}
+					if item.CoreName != "" {
+						note.Content = item.CoreName
+					}
+					v.Notes = append(v.Notes, note)
+				}
+			}
+			v.CVSS = item.CVSSBaseScore
+			if v.CVSS == 0 && item.RiskFactor != "" && item.RiskFactor != "Low" {
+				switch {
+				case item.RiskFactor == "Medium":
+					v.CVSS = 5.0
+				case item.RiskFactor == "High":
+					v.CVSS = 7.5
+				case item.RiskFactor == "Critical":
+					v.CVSS = 10
+				}
+			}
+
+			if v.CVSS == 0 {
+				// Import informational findings if option selected
+				if !info {
+					continue
+				}
+			}
+
+			// Set the CVEs
+			for _, cve := range item.CVE {
+				c := cvePattern.ReplaceAllString(cve, "")
+				v.CVEs = append(v.CVEs, c)
+			}
+
+			// Set the plugin and identified by information
+			plugin := &lair.PluginID{Tool: tool, ID: pluginID}
+			v.PluginIDs = append(v.PluginIDs, *plugin)
+			v.IdentifiedBy = append(v.IdentifiedBy, lair.IdentifiedBy{Tool: tool})
+
+			vulnHostMap[pluginID] = hostMap{Hosts: make(map[string]bool), Vulnerability: v}
+
 		}
 
 		if host.IPv4 == "" {
@@ -243,12 +254,12 @@ func buildProject(nessus *nessus.NessusData, projectID string, tags []string, in
 			if err != nil {
 				return nil, err
 			}
-			hostKey := &lair.IssueHost{
+			hostKey := lair.IssueHost{
 				IPv4:     tokens[0],
 				Port:     portNum,
 				Protocol: tokens[2],
 			}
-			hm.Vulnerability.Hosts = append(hm.Vulnerability.Hosts, *hostKey)
+			hm.Vulnerability.Hosts = append(hm.Vulnerability.Hosts, hostKey)
 		}
 		project.Issues = append(project.Issues, *hm.Vulnerability)
 	}
