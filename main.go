@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	version  = "2.2.1"
+	version  = "2.3.0"
 	tool     = "nessus"
 	osWeight = 75
 	usage    = `
