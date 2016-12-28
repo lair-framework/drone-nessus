@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	version  = "2.3.0"
+	version  = "2.3.1"
 	tool     = "nessus"
 	osWeight = 75
 	usage    = `
@@ -34,7 +34,7 @@ Options:
   -force-ports    disable data protection in the API server for excessive ports
   -limit-hosts    only import hosts that have listening ports
   -tags           a comma separated list of tags to add to every host that is imported
-  -info		  import informational findings
+  -info           import informational findings
 `
 )
 
@@ -233,6 +233,8 @@ func buildProject(nessus *nessus.NessusData, projectID string, tags []string, in
 			v.IdentifiedBy = append(v.IdentifiedBy, lair.IdentifiedBy{Tool: tool})
 
 			vulnHostMap[pluginID] = hostMap{Hosts: make(map[string]bool), Vulnerability: v}
+			hostStr := fmt.Sprintf("%s:%d:%s", host.IPv4, port, protocol)
+			vulnHostMap[pluginID].Hosts[hostStr] = true
 
 		}
 
