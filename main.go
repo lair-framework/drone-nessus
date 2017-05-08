@@ -104,6 +104,15 @@ func buildProject(nessus *nessus.NessusData, projectID string, tags []string, in
 				continue
 			}
 
+			// Change services marked as www to http or https
+			if service == "www" {
+				if port == 443 {
+					service = "https"
+				} else {
+					service = "http"
+				}
+			}
+
 			portKey := fmt.Sprintf("%d:%s", port, protocol)
 			if _, ok := portsProcessed[portKey]; !ok {
 				// Haven't seen this port. Create it.
